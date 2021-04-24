@@ -1,5 +1,6 @@
 # grammar
 SceneMax3D Syntax definition by ANTLR
+![SceneMax3D In Action](scenemax3d_in_action.png)
 
 This is the syntax definition of SceneMax3D programming language. 
 For creating the lexer and parser for this language, use the attached **build.bat** file. Note that the parser is configured to use the **"Visitor"** design pattern approach.
