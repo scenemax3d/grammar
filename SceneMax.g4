@@ -24,6 +24,7 @@ statement
    | scene_actions      # sceneActions
    | terrain_actions     # terrainActions
    | function_statement # functionStatement
+   | mini_map_actions # miniMapActions
    | action_statement   # actionStatement
    | do_block           # doBlock
    | function_invocation # functionInvocation
@@ -49,10 +50,19 @@ statement
    | light_actions # lightActions
    | add_external_code #addExternalCode
    | channel_draw_statement  # channelDraw
-   | mini_map_actions # miniMapActions
    | for_each_statement # forEachStatement
+   | http_statement # httpStatement
    ;
 
+
+http_statement : Http '.' http_action ;
+http_action : http_get | http_post | http_put ;
+http_get : Get http_address ',' res_var_decl ;
+http_post : Post http_address ',' http_body ',' res_var_decl ;
+http_put : Put http_address ',' http_body ',' res_var_decl ;
+
+http_address : logical_expression ;
+http_body : logical_expression ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
 file_name : QUOTED_STRING ;
@@ -64,8 +74,11 @@ debug_off : Off ;
 
 
 play_sound : Play Sound res_var_decl Loop? ;
-audio_play : Audio '.' Play string_expr Loop? ;
+audio_play : Audio '.' Play string_or_logical_expr (Having audio_play_options)? Loop? ;
+audio_play_options : audio_play_option (And audio_play_option)* ;
+audio_play_option : Volume Equals? logical_expression ;
 audio_stop : Audio '.' Stop string_expr ;
+string_or_logical_expr: string_expr | logical_expression ;
 
 mini_map_actions : Minimap '.' show_or_hide (Having minimap_options)? ;
 show_or_hide : Show | Hide ;
@@ -173,12 +186,23 @@ value    :
     |    var_decl
     |    variable_field
     |    variable_data_field
-    |    function_value
-    |    csharp_register
     |    calc_distance_value
     |    calc_angle_value
+    |    function_value
+    |    csharp_register
+    |    fetch_array_value
+    |    get_array_length
+    |    get_json_value
     ;
 
+get_json_value : JSON '(' var_decl ')' json_accessor_expression ;
+json_accessor_expression : json_element_acceessor (json_element_acceessor)* ;
+json_element_acceessor : json_field_accessor | json_array_item_accessor ;
+json_field_accessor : '.' var_decl ;
+json_array_item_accessor : '[' logical_expression ']' ;
+
+get_array_length : var_decl '.' Length ;
+fetch_array_value : var_decl '[' logical_expression ']' ;
 
 calc_angle_value : Angle '(' first_object ',' second_object ')' ;
 calc_distance_value : Distance '(' first_object ',' second_object ')' ;
@@ -191,12 +215,15 @@ variable_data_field : var_decl '.' Data '.' field_name ;
 field_name : ID ;
 
 variable_field : var_decl '.' var_field ;
-var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent ;
+var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
 
 // THE LANGUAGE SYNTAX
 
 declare_variable : Var variable_name_and_assignemt (',' variable_name_and_assignemt)* ;
-variable_name_and_assignemt : res_var_decl (Equals logical_expression)? ;
+variable_name_and_assignemt : res_var_decl (Equals var_value_option)? ;
+var_value_option : single_value_option | array_value ;
+single_value_option : logical_expression ;
+array_value : '[' (logical_expression (',' logical_expression)*)? ']' ;
 
 java_assignment_decl : Equals java_assignment_expr ;
 java_assignment_expr : logical_expression ;
@@ -206,9 +233,7 @@ java_func_name : Jump | res_var_decl ;
 
 
 define_resource
-   : define_sprite_implicit # defSpriteImplicit
-   | define_sprite_implicit # defSpriteImplicit
-   ;
+   : define_sprite_implicit # defSpriteImplicit ;
 
 for_each_statement : For Each entity_type? '(' var_decl ')' (for_each_having_expr)? do_block ;
 entity_type : Model | Sprite | Sphere | Box ;
@@ -234,7 +259,7 @@ define_group : res_var_decl Belongs To The group_name Group ;
 group_name : ID ;
 define_sphere: res_var_decl isa_expr Collider? Static? Sphere (sphere_having_expr)? ;
 define_box: res_var_decl isa_expr Collider? Static? Box (box_having_expr)? ;
-define_sprite_implicit : var_decl isa_expr res_var_decl Sprite (sprite_having_expr)? ;
+define_sprite_implicit : var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
 define_variable : var_decl isa_expr Dynamic? Static? dynamic_model_type Vehicle? (scene_entity_having_expr)? ;
 dynamic_model_type : res_var_decl | dynamic_model_type_name ;
@@ -265,7 +290,6 @@ init_scale_attr : Scale Equals? logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : var_decl java_assignment_decl ;
-from_file_expr : From file_var_decl ;
 
 particle_system_actions : Effects '.' particle_system_effect '.' particle_system_action (async_expr)? ;
 particle_system_effect: Flash | Explosion | Debris | Spark | SmokeTrail | ShockWave | Fire |
@@ -347,7 +371,13 @@ attach_camera_action : attach_camera_action_start | attach_camera_action_stop ;
 attach_camera_action_start : Attach To var_decl  attach_camera_having_expr? ;
 attach_camera_having_expr : Having attach_camera_having_options ;
 attach_camera_having_options : attach_camera_having_option (And attach_camera_having_option)* ;
-attach_camera_having_option : print_pos_attr ;
+attach_camera_having_option : print_pos_attr |
+                              camera_type_attr |
+                              replay_attr_offset |
+                              damping_attr;
+damping_attr : Damping logical_expression ;
+camera_type_attr : Type Equals? camera_type ;
+camera_type : Dungeon | Follow ;
 attach_camera_action_stop : Attach Stop ;
 
 chase_camera_actions : Camera '.' chase_camera_action ;
@@ -406,7 +436,6 @@ action_operation
    | detach_parent  # dettachParent
    | play		# playStatement
    | hide       # hideStatement
-   | kill       # killStatement
    | show       # showStatement
    | delete     # deleteStatement
    | animate    # animateStatement
@@ -425,7 +454,23 @@ action_operation
    | vehicle_engine_setup # vehicleEngineSetup
    | character_actions # characterActions
    | set_material_action # setMaterialAction
+   | replay # replayAction
    ;
+
+
+replay : var_decl '.' Replay replay_options (Having replay_attributes)? ;
+replay_attributes : replay_attribute (And replay_attribute)* ;
+replay_attribute : replay_attr_offset ;
+replay_attr_offset : all_axes_names Offset logical_expression ;
+replay_options : replay_command | replay_stop | replay_switch_to | replay_pause | replay_resume | replay_change_speed ;
+replay_switch_to : Switch To replay_data (Having replay_attributes)? ;
+replay_command : replay_data starting_at_expr? In speed_expr loop_expr? ;
+replay_data : var_decl ;
+starting_at_expr : Start At logical_expression ;
+replay_stop : Stop ;
+replay_pause : Pause ;
+replay_resume : Resume ;
+replay_change_speed : Speed speed_expr ;
 
 check_static: When var_decl Is Static For logical_expression Seconds do_block ;
 
@@ -433,9 +478,10 @@ collision : go_condition? When var_decl collision_joint_1? Collides With var_dec
 collision_joint_1 : ('.' QUOTED_STRING) ;
 collision_joint_2 : ('.' QUOTED_STRING) ;
 stop : var_decl '.' Stop ;
-rotate : var_decl '.' Rotate '(' (axis_expr (',' axis_expr)*) ')' In speed_expr ;
+rotate : var_decl '.' Rotate '(' (axis_expr (',' axis_expr)*) ')' In speed_expr loop_expr? ;
 rotate_to :  var_decl '.' Rotate To '(' axis_name logical_expression ')' In speed_expr ;
 axis_name : X | Y | Z ;
+all_axes_names : axis_name | RX | RY | RZ ;
 
 record : var_decl '.' Record record_actions ;
 record_actions : record_transitions | record_commands | record_stop | record_save ;
@@ -444,11 +490,12 @@ record_commands : Commands ;
 record_stop : Stop ;
 record_save : Save QUOTED_STRING ;
 
-turn_verbal : var_decl '.' Turn turn_dir? turn_degrees In speed_expr ;
+turn_verbal : var_decl '.' Turn turn_dir? turn_degrees In speed_expr loop_expr? ;
 turn_dir : Left | Right | Forward | Backward ;
 turn_degrees : logical_expression ;
+loop_expr : Loop While logical_expression ;
 
-roll_verbal :  var_decl '.' Roll turn_dir turn_degrees In speed_expr ;
+roll_verbal :  var_decl '.' Roll turn_dir turn_degrees In speed_expr loop_expr? ;
 
 turn_verbal_to : var_decl '.' Look At move_to_target (In speed_expr)? ;
 
@@ -545,7 +592,6 @@ character_actions : var_decl '.' Character '.' character_action ;
 character_action : character_action_jump ;
 character_action_jump : Jump speed_of_expr? ;
 
-kill : var_decl '.' Kill ;
 play : var_decl '.' Play '(' frames_expr (In speed_expr)? ')' play_duration_strategy? ;
 hide : var_decl '.' Hide show_options? ;
 show : var_decl '.' Show show_options? ;
@@ -616,14 +662,37 @@ axis_expr : axis_id number_sign? logical_expression ;
 axis_id : X | Y | Z ;
 //res_type_expr : Model | Sprite ;
 isa_expr : IsA | IsAn ;
-var_decl : ID | Camera ;
-res_var_decl : ID ;
+var_decl : ID | Camera | allowed_keywords_var_names ;
+res_var_decl : ID | allowed_keywords_var_names ;
 valid_java_class_name : ID ;
 file_var_decl : ID ;
 
-number_expr : number_sign? number ;
+number_expr : number_sign? number exponent?;
+exponent : 'E' integer ;
+integer : number_sign? DecimalDigit ;
 number_sign : PLUS | MINUS ;
 number: DecimalDigit ('.' DecimalDigit)? ;
+
+allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | ReplayIndex | AnimPercent |
+    Do | Loop | Material | Radius | Sphere | Box | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
+    Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
+    Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
+    Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | CS | SkyBox | Solar | System |
+    Cloud | Billboard | Model | Sprite | From | Having | For | Contains | Each | Name | Joints | Dynamic | Static | Collider |
+    Hidden | Where | And | In | Then | Rows | Cols | To | Be | Frames | Seconds | Wait | Using | At | Speed | Of | Rotate | Scale |
+    Mass | Velocity | Angular | Restitution | Data | Move | Belongs | The | Group | Look | Looking | Roll | Turn | Forward |
+    Backward | Left | Right | Up | Down | Code | Light | Lights | Add | Probe | Minimap | Play | Sound | Audio | Hide | Show |
+    Hour | Wireframe | Info | Speedo | Tacho | Outline | Delete | Accelerate | Steer | Brake | Turbo | Reset | Front | Rear |
+    Input | Reverse | Break | HandBrake | Horn | Engine | Power | Breaking | Friction | Suspension | Compression | Damping |
+    Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
+    Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
+    Screen | Scene | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
+    Call | Every | Extends | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put ;
+
+Http : 'Http' | 'http' ;
+Get : 'Get' | 'get' | 'GET' ;
+Post : 'Post' | 'post' | 'POST' ;
+Put : 'Put' | 'put' | 'PUT' ;
 
 Axis : 'Axis' | 'axis' ;
 X : 'X' | 'x' ;
@@ -634,6 +703,7 @@ RY : 'Ry' | 'RY' | 'ry' ;
 RZ : 'Rz' | 'RZ' | 'rz' ;
 Hit : 'Hit' | 'hit' ;
 AnimPercent : 'anim_percent' ;
+ReplayIndex : 'replay_index' ;
 
 True : 'True' | 'true' ;
 False : 'False' | 'false' ;
@@ -644,8 +714,9 @@ Times : 'times' | 'Times' ;
 End : 'end' | 'End' ;
 Do : 'do' | 'Do' ;
 Loop : 'loop' | 'Loop' ;
+While : 'While' | 'while' ;
 Async : 'async' | 'Async' ;
-IsA : 'is a' | 'Is a' | 'is A' | 'Is A' ;
+IsA : 'is a' | 'Is a' | 'is A' | 'Is A' | '=>';
 IsAn : 'is an' | 'Is an' | 'is An' | 'Is An' ;
 //Is : 'is' | 'Is' ;
 //A : 'a' | 'A' | 'an' | 'An' ;
@@ -674,7 +745,8 @@ Orbital : 'Orbital' | 'orbital' ;
 TimeOrbit : 'TimeOrbit' | 'timeOrbit' ;
 
 
-
+Replay : 'Replay' | 'replay' ;
+Offset : 'Offset' | 'offset' ;
 Start : 'Start' | 'start' ;
 Gravity : 'Gravity' | 'gravity' ;
 Duration : 'Duration' | 'duration' ;
@@ -694,6 +766,7 @@ Max : 'Max' | 'max' ;
 Min : 'Min' | 'min' ;
 Distance : 'Distance' | 'distance' ;
 Angle : 'Angle' | 'angle' ;
+JSON : 'JSON' | 'json' ;
 
 Parent : 'Parent' | 'parent' ;
 Detach : 'Detach' | 'detach' ;
@@ -781,8 +854,8 @@ Minimap : 'Minimap' | 'minimap' ;
 Play : 'Play' | 'play' ;
 Sound : 'Sound' | 'sound' ;
 Audio : 'Audio' | 'audio' ;
+Volume : 'Volume' | 'volume' ;
 Hide : 'Hide' | 'hide' ;
-Kill : 'Kill' | 'kill' ;
 Show : 'Show' | 'show' ;
 Hour : 'Hour' | 'hour' ;
 Wireframe : 'Wireframe' | 'wireframe' ;
@@ -846,6 +919,8 @@ Pos : 'Pos' | 'pos' ;
 Size : 'Size' | 'size' ;
 Height : 'Height' | 'height' ;
 Follow : 'Follow' | 'follow' ;
+Dungeon : 'Dungeon' | 'dungeon' ;
+Type : 'Type' | 'type' ;
 File : 'File' | 'file' ;
 
 Clear : 'Clear' | 'clear' ;
